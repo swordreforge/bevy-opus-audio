@@ -76,6 +76,7 @@ pub struct OpusSource {
     channels: u16,
     pre_skip: usize,
     buf: Vec<f32>,
+    scratch: Vec<f32>,
     pos: usize,
     done: bool,
 }
@@ -85,7 +86,7 @@ impl OpusSource {
         let mut packets = PacketReader::new(Cursor::new(audio.bytes.clone()));
         let _ = packets.read_packet();
         let _ = packets.read_packet();
-        Self {
+        let mut source = Self {
             decoder: OpusDecoder::new(audio.sample_rate as i32, audio.channels as usize)
                 .expect("channels/sample rate validated at load"),
             packets,
@@ -93,46 +94,35 @@ impl OpusSource {
             channels: audio.channels,
             pre_skip: audio.pre_skip as usize,
             buf: Vec::new(),
+            scratch: Vec::new(),
             pos: 0,
             done: false,
-        }
+        };
+        source.fill();
+        source
     }
-}
 
-impl Iterator for OpusSource {
-    type Item = f32;
+    fn fill(&mut self) {
+        self.buf.clear();
+        self.pos = 0;
 
-    fn next(&mut self) -> Option<f32> {
-        loop {
-            if self.pos < self.buf.len() {
-                let s = self.buf[self.pos];
-                self.pos += 1;
-                return Some(s);
-            }
-            if self.done {
-                return None;
-            }
-
-            self.buf.clear();
-            self.pos = 0;
-
+        while self.buf.is_empty() && !self.done {
             let packet = match self.packets.read_packet() {
                 Ok(Some(p)) => p,
                 _ => {
                     self.done = true;
-                    continue;
+                    break;
                 }
             };
 
-            let frame_size = match opus_frame_samples(&packet.data, self.sample_rate) {
-                Some(n) => n,
-                None => continue,
+            let Some(frame_size) = opus_frame_samples(&packet.data, self.sample_rate) else {
+                continue;
             };
             let ch = self.channels as usize;
-            let mut out = vec![0.0f32; frame_size * ch];
-            match self.decoder.decode(&packet.data, frame_size, &mut out) {
+            self.scratch.resize(frame_size * ch, 0.0);
+            match self.decoder.decode(&packet.data, frame_size, &mut self.scratch) {
                 Ok(n) => {
-                    let samples = &out[..n * ch];
+                    let samples = &self.scratch[..n * ch];
                     if self.pre_skip > 0 {
                         let skip = self.pre_skip.min(n);
                         let start = skip * ch;
@@ -150,6 +140,24 @@ impl Iterator for OpusSource {
     }
 }
 
+impl Iterator for OpusSource {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        loop {
+            if self.pos < self.buf.len() {
+                let s = self.buf[self.pos];
+                self.pos += 1;
+                return Some(s);
+            }
+            if self.done {
+                return None;
+            }
+            self.fill();
+        }
+    }
+}
+
 fn opus_frame_samples(packet: &[u8], sample_rate: u32) -> Option<usize> {
     if packet.is_empty() {
         return None;
@@ -162,11 +170,7 @@ fn opus_frame_samples(packet: &[u8], sample_rate: u32) -> Option<usize> {
 
 impl Source for OpusSource {
     fn current_span_len(&self) -> Option<usize> {
-        if self.done {
-            Some(0)
-        } else {
-            None
-        }
+        Some(self.buf.len())
     }
 
     fn channels(&self) -> ChannelCount {
