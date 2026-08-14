@@ -1,6 +1,6 @@
 [package]
 name = "bevy-opus-audio"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Pure-Rust Ogg-Opus audio decoding for Bevy, via rusty-opus (zero C/FFI)"
 license = "MIT OR Apache-2.0"
