@@ -1,0 +1,18 @@
+[package]
+name = "bevy-opus-audio"
+version = "0.1.0"
+edition = "2021"
+description = "Pure-Rust Ogg-Opus audio decoding for Bevy, via rusty-opus (zero C/FFI)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/swordreforge/bevy-opus-audio"
+readme = "README.md"
+keywords = ["bevy", "audio", "opus", "codec", "decoder"]
+categories = ["game-engines", "multimedia::audio"]
+
+[dependencies]
+bevy = { version = "0.19", default-features = false, features = [
+    "bevy_asset",
+    "bevy_audio",
+] }
+rusty-opus = "0.9.1"
+ogg = "0.8"
